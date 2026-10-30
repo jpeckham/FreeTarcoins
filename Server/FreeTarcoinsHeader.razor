@@ -1,0 +1,96 @@
+@* Adapted from SP-Tushonka/server-csharp ShopHeader.razor (b36816ac).
+   Original authors: Archangel / SPT contributors. Header adaptation: James Peckham.
+   CC BY-NC-SA 4.0; see ../LICENSE-ShopHeader.txt and ../THIRD-PARTY-NOTICES.md. *@
+@namespace FreeTarcoins
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using SPTarkov.Server.Web.Pages.Shop.Components
+@inject NavigationManager Navigation
+<div class="main-header the-header__global-header main-layout__global-header">
+    <div class="main-header__left">
+        <button class="tab btn-grid-overlay tab--active">
+            <span class="tab__content">
+                <span class="tab__icon-container">
+                    <img class="textures-icon tab__icon" src="/files/shop/ExpansionsHub_MainTab_Store_Icon_2.png" alt=""/>
+                </span>
+                <span class="tab__label">Store</span>
+            </span>
+        </button>
+    </div>
+
+    <div class="main-header__title">Expansion Hub</div>
+
+    <div class="main-header__actions">
+        <button type="button" class="the-header__balance" style="border:0;background:transparent;padding:0;cursor:pointer;color:inherit" title="Add free Tarcoins" aria-label="Add free Tarcoins" @ref="_balanceButton" @onclick="Open">
+            <div class="user-balance">
+                <div class="texture user-balance__bg"
+                     style="background-image: url(/files/shop/ExpansionsHub_Currency_Log_Background.png); background-size: cover; background-position: center center; background-repeat: no-repeat;"></div>
+                <div class="user-balance__panel">
+                    <div class="user-balance__art">
+                        <img class="textures-icon" src="/files/shop/ExpansionsHub_Currency_TC_Icon_2.png" alt="TarCoins" width="32" height="32"/>
+                    </div>
+                    <div class="user-balance__value">@ShopFormat.Price(Balance)</div>
+                    <div class="user-balance__log"></div>
+                </div>
+            </div>
+        </button>
+
+        <div class="main-header__logout">
+            <button class="btn btn--secondary btn--size--med main-header__exit" @onclick="Exit">
+                <span class="btn-text">Exit</span>
+                <div class="texture btn-texture" style="background-image: url(/files/shop/ExpansionsHub_MainButton_172_Background_1.png);"></div>
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (_open)
+{
+    <div class="freetarcoins-backdrop" style="position:fixed;inset:0;z-index:2147483000;background:#000b;display:flex;align-items:center;justify-content:center" @onclick="Cancel">
+        <section role="dialog" aria-modal="true" aria-labelledby="freetarcoins-title" style="width:min(440px,90vw);padding:28px;background:#171917;border:1px solid #807b60;color:#eee;box-shadow:0 16px 60px #000;font:18px sans-serif" @onclick:stopPropagation="true" @onkeydown="KeyDown">
+            <h2 id="freetarcoins-title" style="margin:0 0 12px;font-size:26px">Free Tarcoins</h2>
+            <p style="margin:0 0 20px">Balance: @ShopFormat.Price(Balance)</p>
+            <form @onsubmit="Add" @onsubmit:preventDefault="true">
+                <label for="freetarcoins-amount">Amount to add</label>
+                <input id="freetarcoins-amount" @ref="_input" type="text" inputmode="numeric" autocomplete="off" maxlength="10" @bind="_amount" @bind:event="oninput" disabled="@_pending" style="display:block;box-sizing:border-box;width:100%;margin:8px 0 16px;padding:12px;background:#292c29;color:#fff;border:1px solid #888;font-size:22px" />
+                <p role="status" style="min-height:42px;font-size:16px;line-height:1.4">@_message</p>
+                <div style="display:flex;gap:12px;justify-content:flex-end">
+                    <button type="button" @onclick="Cancel" disabled="@_pending" style="padding:10px 18px;background:#333;color:#eee;border:1px solid #888">Cancel</button>
+                    <button type="submit" disabled="@(_pending || _uncertain)" style="padding:10px 18px;background:#b5a878;color:#111;border:1px solid #cfc39b">@(_pending ? "Adding..." : "Add Tarcoins")</button>
+                </div>
+            </form>
+        </section>
+    </div>
+}
+@inject IJSRuntime JS
+@code {
+    [Parameter] public int Balance { get; set; }
+    private bool _open, _pending, _uncertain, _focusInput, _focusBalance;
+    private ElementReference _input, _balanceButton;
+    private string _amount = "1000", _message = "";
+    private string? Session => new Uri(Navigation.Uri).AbsolutePath.Split('/',StringSplitOptions.RemoveEmptyEntries) is var parts && parts.Length >= 2 && parts[0] == "shop" ? parts[1] : null;
+    private void Open(){_open=true;_message="";_uncertain=false;_focusInput=true;}
+    protected override async Task OnAfterRenderAsync(bool firstRender){
+        if(_focusInput){_focusInput=false;await _input.FocusAsync();}
+        if(_focusBalance){_focusBalance=false;await _balanceButton.FocusAsync();}
+    }
+    private void Cancel(){if(!_pending){_open=false;_focusBalance=true;}}
+    private void KeyDown(KeyboardEventArgs e){if(e.Key=="Escape")Cancel();}
+    private async Task Exit()=>await JS.InvokeVoidAsync("shopExit");
+    private async Task Add(){
+        if(_pending || _uncertain)return;
+        if(!Amount.TryParse(_amount,out var amount)){_message="Enter a positive whole number.";return;}
+        if(Session is not {Length:24} session){_message="No active shop profile. Reopen Expansion Hub.";return;}
+        _pending=true;_message="Adding Tarcoins...";
+        try {
+            var result=await ShopPatch.Credit(session,amount,Guid.NewGuid().ToString());
+            _message=result.Message;
+            if(result.Success) {
+                // Refresh the page's balance and affordability calculations from the server together.
+                Navigation.NavigateTo(Navigation.Uri,forceLoad:true);
+            } else _uncertain=true;
+        } catch { _uncertain=true;_message="Could not confirm the credit. Check your balance before adding again."; }
+        finally {_pending=false;}
+    }
+}
