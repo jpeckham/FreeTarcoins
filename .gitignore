@@ -1,0 +1,13 @@
+bin/
+obj/
+Build/
+.vs/
+.idea/
+*.user
+*.suo
+*.dll
+*.exe
+*.log
+*.zip
+*.7z
+.env
